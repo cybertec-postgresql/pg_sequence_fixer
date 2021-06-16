@@ -1,4 +1,5 @@
-BEGIN;
+-- complain if script is sourced in psql, rather than via CREATE EXTENSION
+\echo Use "CREATE EXTENSION pg_sequence_fixer" to load this file. \quit
 
 CREATE FUNCTION pg_sequence_fixer(IN v_margin int, IN v_lock_mode boolean DEFAULT false)
 RETURNS void AS

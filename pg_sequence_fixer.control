@@ -1,5 +1,5 @@
 # pg_sequence_fixer
 comment = 'adjusting sequences which got out of sync'
-default_version = '1.ß'
+default_version = '1.0'
 module_pathname = '$libdir/pg_sequence_fixer'
 relocatable = true
