@@ -1,5 +1,5 @@
 -- complain if script is sourced in psql, rather than via CREATE EXTENSION
---\echo Use "CREATE EXTENSION pg_sequence_fixer" to load this file. \quit
+\echo Use "CREATE EXTENSION pg_sequence_fixer" to load this file. \quit
 
 CREATE OR REPLACE FUNCTION pg_sequence_fixer(IN v_margin int, IN v_lock_mode boolean DEFAULT false)
 RETURNS void AS
@@ -43,7 +43,7 @@ $$
 				EXECUTE v_sql;
 			END IF;
 
-
+      -- compute the current max value in the table column
       v_sql := 'SELECT max( ' || quote_ident(v_rec.attname::text) || ' ) FROM ' || v_rec.refobjid::regclass;
       EXECUTE v_sql INTO v_max;
 
@@ -53,11 +53,34 @@ $$
         v_max;
 
       IF v_max IS NOT NULL THEN
-        v_sql := 'SELECT setval(' || quote_literal(v_rec.objid::regclass) || '::text, max(' 
-				  || quote_ident(v_rec.attname::text) || ') + ' || v_margin 
+
+        -- check if the sequence does allow for the minimum value
+        v_sql := 'SELECT EXISTS ( '
+          || 'SELECT seqmin, seqmax FROM pg_sequence WHERE '
+          || ' seqrelid = ' || quote_literal(v_rec.objid::regclass) || '::regclass '
+          || ' AND seqmin <= ' || ( v_max + v_margin )
+          || ' AND seqmax >= ' || ( v_max + v_margin )
+          || ' )';
+        EXECUTE v_sql;
+
+
+        IF NOT FOUND THEN
+
+          RAISE NOTICE 'Sequence %, owned by %, does not accept value % + % = %',
+          quote_literal(v_rec.objid::regclass),
+          v_rec.refobjid::text,
+          v_max,
+          v_margin,
+          ( v_max + v_margin );
+          CONTINUE;
+        END IF;
+
+        -- if here, it does make sense to set the sequence value
+        v_sql := 'SELECT setval(' || quote_literal(v_rec.objid::regclass) || '::text, '
+          || ( v_max + v_margin )
 				  || ') FROM ' || v_rec.refobjid::regclass;
 			  EXECUTE v_sql INTO v_max;
-			  RAISE NOTICE 'setting sequence for % to %', v_rec.refobjid::text, v_max;
+			  RAISE NOTICE 'setting sequence owned by % to %', v_rec.refobjid::text, v_max;
       ELSE
         v_sql := 'ALTER SEQUENCE ' || v_rec.objid::regclass || ' RESTART ';
         EXECUTE v_sql;
