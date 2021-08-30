@@ -1,7 +1,7 @@
 -- complain if script is sourced in psql, rather than via CREATE EXTENSION
-\echo Use "CREATE EXTENSION pg_sequence_fixer" to load this file. \quit
+--\echo Use "CREATE EXTENSION pg_sequence_fixer" to load this file. \quit
 
-CREATE FUNCTION pg_sequence_fixer(IN v_margin int, IN v_lock_mode boolean DEFAULT false)
+CREATE OR REPLACE FUNCTION pg_sequence_fixer(IN v_margin int, IN v_lock_mode boolean DEFAULT false)
 RETURNS void AS
 $$
 	DECLARE
@@ -43,11 +43,28 @@ $$
 				EXECUTE v_sql;
 			END IF;
 
-			v_sql := 'SELECT setval(' || quote_literal(v_rec.objid::regclass) || '::text, max(' 
-				|| quote_ident(v_rec.attname::text) || ') + ' || v_margin 
-				|| ') FROM ' || v_rec.refobjid::regclass;
-			EXECUTE v_sql INTO v_max;
-			RAISE NOTICE 'setting sequence for % to %', v_rec.refobjid::text, v_max; 
+
+      v_sql := 'SELECT max( ' || quote_ident(v_rec.attname::text) || ' ) FROM ' || v_rec.refobjid::regclass;
+      EXECUTE v_sql INTO v_max;
+
+      RAISE DEBUG 'Current max value on %.% is %',
+        v_rec.refobjid::regclass,
+        quote_ident(v_rec.attname::text),
+        v_max;
+
+      IF v_max IS NOT NULL THEN
+        v_sql := 'SELECT setval(' || quote_literal(v_rec.objid::regclass) || '::text, max(' 
+				  || quote_ident(v_rec.attname::text) || ') + ' || v_margin 
+				  || ') FROM ' || v_rec.refobjid::regclass;
+			  EXECUTE v_sql INTO v_max;
+			  RAISE NOTICE 'setting sequence for % to %', v_rec.refobjid::text, v_max;
+      ELSE
+        v_sql := 'ALTER SEQUENCE ' || v_rec.objid::regclass || ' RESTART ';
+        EXECUTE v_sql;
+        RAISE NOTICE 'resetting sequence owned by %', v_rec.refobjid::text;
+      END IF;
+
+
 		END LOOP;
 
 		RETURN;
