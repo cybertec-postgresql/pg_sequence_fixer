@@ -1,5 +1,5 @@
 -- complain if script is sourced in psql, rather than via CREATE EXTENSION
-\echo Use "CREATE EXTENSION pg_sequence_fixer" to load this file. \quit
+--\echo Use "CREATE EXTENSION pg_sequence_fixer" to load this file. \quit
 
 CREATE OR REPLACE FUNCTION pg_sequence_fixer(IN v_margin int, IN v_lock_mode boolean DEFAULT false)
 RETURNS void AS
@@ -91,7 +91,6 @@ $$
         END IF;
 
 
-        raise debug 'here';
         -- if here, it does make sense to set the sequence value
         v_sql := 'SELECT setval(' || quote_literal(v_rec.objid::regclass) || '::text, '
           || ( v_max + v_margin )
@@ -100,6 +99,17 @@ $$
 			  EXECUTE v_sql INTO v_max;
 			  RAISE NOTICE 'set sequence owned by % to %', v_rec.refobjid::text, v_max;
       ELSE
+        -- check if the user can issue an ALTER SEQUENCE
+        v_sql := 'SELECT EXISTS( SELECT relowner, relname FROM pg_class c '
+          || 'JOIN pg_roles r ON r.oid = c.relowner WHERE c.oid = ' || quote_literal(v_rec.objid::regclass) || '::regclass'
+          || ' AND c.relkind = '|| quote_literal( 'S' ) || ' AND r.rolname = CURRENT_ROLE )';
+        EXECUTE v_sql INTO v_can;
+
+        IF NOT v_can THEN
+          RAISE NOTICE 'Cannot reset sequence %, you must be the owner', quote_literal(v_rec.objid::regclass);
+          CONTINUE;
+        END IF;
+
         v_sql := 'ALTER SEQUENCE ' || v_rec.objid::regclass || ' RESTART ';
         EXECUTE v_sql;
         RAISE NOTICE 'reset sequence owned by %', v_rec.refobjid::text;
